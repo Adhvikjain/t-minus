@@ -1,0 +1,10 @@
+{
+  "birth_date": "2007-10-08",
+  "life_expectancy_years": 75,
+  "theme": {
+    "background": "#09090b",
+    "lived_dot": "#a3a3a3",
+    "remaining_dot": "#262626",
+    "text": "#737373"
+  }
+}
