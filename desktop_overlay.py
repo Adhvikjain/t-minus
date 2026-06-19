@@ -189,77 +189,84 @@ class TooltipWindow:
             ctypes.windll.user32.SetWindowLongW(self.hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT)
             
             # Set transparency color key
-            self.root.attributes("-transparentcolor", "#121212")
+            self.root.attributes("-transparentcolor", "#09090b")
         else:
             self.hwnd = None
             
-        self.root.config(bg="#121212")
+        self.root.config(bg="#09090b")
         self.card_width = 240
         self.card_height = 125
         
-        # Create canvas for squircle drawing
-        self.canvas = tk.Canvas(self.root, bg="#121212", highlightthickness=0, width=self.card_width, height=self.card_height)
+        # Create canvas
+        self.canvas = tk.Canvas(self.root, bg="#09090b", highlightthickness=0, width=self.card_width, height=self.card_height)
         self.canvas.pack(fill="both", expand=True)
         
         self.visible = False
-        self.lived_color = "#a3a3a3"
-        self.remaining_color = "#262626"
-        self.text_color = "#737373"
-        
-        # Pre-create Canvas elements so we just modify them later
-        # 1. Main Background Squircle
-        self.bg_id = draw_squircle(self.canvas, 2, 2, self.card_width - 2, self.card_height - 2, 16, fill="#18181b", outline="", width=0)
-        
-        # 2. Header: Week X
-        self.week_text_id = self.canvas.create_text(20, 24, text="Week 0", font=("Segoe UI", 11, "bold"), fill="#ffffff", anchor="w")
-        
-        # 3. Header Badge: LIVED / REMAINING
-        # Badge coordinates: Left=155, Top=14, Right=220, Bottom=34, Radius=5
-        self.badge_bg_id = draw_squircle(self.canvas, 155, 14, 220, 34, 5, fill="#27272a", outline="", width=0)
-        self.badge_text_id = self.canvas.create_text(187, 24, text="LIVED", font=("Segoe UI", 8, "bold"), fill="#a1a1aa", anchor="center")
-        
-        # 4. Divider Line
-        self.divider_id = self.canvas.create_line(20, 44, 220, 44, fill="#27272a", width=1)
-        
-        # 5. Body: Age Row
-        self.age_label_id = self.canvas.create_text(20, 60, text="Age:", font=("Segoe UI", 9), fill="#71717a", anchor="w")
-        self.age_val_id = self.canvas.create_text(220, 60, text="-", font=("Segoe UI", 9, "bold"), fill="#ffffff", anchor="e")
-        
-        # 6. Body: Date Range Pill
-        # Coordinates: Left=20, Top=78, Right=220, Bottom=108, Radius=6
-        self.date_bg_id = draw_squircle(self.canvas, 20, 78, 220, 108, 6, fill="#09090b", outline="", width=0)
-        self.date_val_id = self.canvas.create_text(120, 93, text="-", font=("Segoe UI", 9, "bold"), fill="#e4e4e7", anchor="center")
+        self.theme = {}
+        self.photo_img = None
         
     def update_theme(self, theme):
-        self.lived_color = theme.get("lived_dot", "#a3a3a3")
-        self.remaining_color = theme.get("remaining_dot", "#262626")
-        self.text_color = theme.get("text", "#737373")
+        self.theme = theme
         bg_color = theme.get("background", "#09090b")
-        
         if sys.platform == "win32":
             self.root.attributes("-transparentcolor", bg_color)
         self.root.config(bg=bg_color)
         self.canvas.config(bg=bg_color)
-        self.canvas.itemconfig(self.bg_id, fill="#18181b")
         
     def show(self, week_num, is_lived, age_str, dates_str, cx, cy):
-        # Update text contents
-        self.canvas.itemconfig(self.week_text_id, text=f"Week {week_num}")
-        self.canvas.itemconfig(self.age_val_id, text=age_str)
-        self.canvas.itemconfig(self.date_val_id, text=dates_str)
+        # Render the tooltip card as a PIL image
+        bg_color = self.theme.get("background", "#09090b")
+        bg_rgb = hex_to_rgb(bg_color)
         
-        # Configure badge state
-        if is_lived:
-            status_bg = "#27272a"
-            status_fg = "#a1a1aa"
-            status_text = "LIVED"
-        else:
-            status_bg = "#1e1e20"
-            status_fg = "#71717a"
-            status_text = "REMAINING"
+        img = Image.new("RGBA", (self.card_width, self.card_height), bg_rgb + (0,))
+        draw = ImageDraw.Draw(img)
+        
+        # 1. Main Background Squircle
+        draw.rounded_rectangle([2, 2, self.card_width - 2, self.card_height - 2], radius=16, fill=(24, 24, 27, 255)) # #18181b
+        
+        # 2. Load Fonts
+        try:
+            import os
+            font_dir = "C:\\Windows\\Fonts"
+            font_bold = ImageFont.truetype(os.path.join(font_dir, "segoeuib.ttf"), 14)
+            font_regular = ImageFont.truetype(os.path.join(font_dir, "segoeui.ttf"), 12)
+            font_sm_bold = ImageFont.truetype(os.path.join(font_dir, "segoeuib.ttf"), 10)
+        except Exception:
+            font_bold = ImageFont.load_default()
+            font_regular = ImageFont.load_default()
+            font_sm_bold = ImageFont.load_default()
             
-        self.canvas.itemconfig(self.badge_bg_id, fill=status_bg)
-        self.canvas.itemconfig(self.badge_text_id, text=status_text, fill=status_fg)
+        # 3. Draw Header Week text
+        draw.text((20, 24), f"Week {week_num}", font=font_bold, fill=(255, 255, 255, 255), anchor="lm")
+        
+        # 4. Draw Header Badge: LIVED / REMAINING
+        badge_text = "LIVED" if is_lived else "REMAINING"
+        if is_lived:
+            badge_bg = (39, 39, 42, 255) # #27272a
+            badge_fg = (161, 161, 170, 255) # #a1a1aa
+        else:
+            badge_bg = (30, 30, 32, 255) # #1e1e20
+            badge_fg = (113, 113, 122, 255) # #71717a
+            
+        # Draw badge squircle
+        draw.rounded_rectangle([155, 14, 220, 34], radius=5, fill=badge_bg)
+        draw.text((187, 24), badge_text, font=font_sm_bold, fill=badge_fg, anchor="mm")
+        
+        # 5. Divider Line
+        draw.line([(20, 44), (220, 44)], fill=(39, 39, 42, 255), width=1) # #27272a
+        
+        # 6. Body: Age Row
+        draw.text((20, 62), "Age:", font=font_regular, fill=(113, 113, 122, 255), anchor="lm") # #71717a
+        draw.text((220, 62), age_str, font=font_bold, fill=(255, 255, 255, 255), anchor="rm")
+        
+        # 7. Body: Date Range Pill
+        draw.rounded_rectangle([20, 78, 220, 108], radius=6, fill=(9, 9, 11, 255)) # #09090b
+        draw.text((120, 93), dates_str, font=font_bold, fill=(228, 228, 231, 255), anchor="mm") # #e4e4e7
+        
+        # Convert to PhotoImage and update canvas
+        self.photo_img = ImageTk.PhotoImage(img)
+        self.canvas.delete("all")
+        self.canvas.create_image(0, 0, image=self.photo_img, anchor="nw")
         
         # Center horizontally, offset above dot
         tx = int(cx - self.card_width / 2)
