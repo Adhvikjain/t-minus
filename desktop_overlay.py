@@ -463,8 +463,8 @@ def check_hover():
             cy = start_y + (r * spacing)
             dist = math.sqrt((mx - cx)**2 + (my - cy)**2)
             
-            # spacing * 0.45 hit box
-            if dist <= spacing * 0.45:
+            # spacing * 0.70 hit box (generous coverage of dot cells)
+            if dist <= spacing * 0.70:
                 i = r * cols + c
                 week_num = i + 1
                 is_lived = (i < weeks_lived)
