@@ -214,15 +214,13 @@ class TooltipWindow:
         self.canvas.config(bg=bg_color)
         
     def show(self, week_num, is_lived, age_str, dates_str, cx, cy):
-        # Render the tooltip card as a PIL image
+        # Render the tooltip card as a solid RGB image
         bg_color = self.theme.get("background", "#09090b")
-        bg_rgb = hex_to_rgb(bg_color)
-        
-        img = Image.new("RGBA", (self.card_width, self.card_height), bg_rgb + (0,))
+        img = Image.new("RGB", (self.card_width, self.card_height), bg_color)
         draw = ImageDraw.Draw(img)
         
         # 1. Main Background Squircle
-        draw.rounded_rectangle([2, 2, self.card_width - 2, self.card_height - 2], radius=16, fill=(24, 24, 27, 255)) # #18181b
+        draw.rounded_rectangle([2, 2, self.card_width - 2, self.card_height - 2], radius=16, fill=(24, 24, 27)) # #18181b
         
         # 2. Load Fonts
         try:
@@ -237,31 +235,44 @@ class TooltipWindow:
             font_sm_bold = ImageFont.load_default()
             
         # 3. Draw Header Week text
-        draw.text((20, 24), f"Week {week_num}", font=font_bold, fill=(255, 255, 255, 255), anchor="lm")
+        try:
+            draw.text((20, 24), f"Week {week_num}", font=font_bold, fill=(255, 255, 255), anchor="lm")
+        except (ValueError, AttributeError):
+            draw.text((20, 18), f"Week {week_num}", font=font_bold, fill=(255, 255, 255))
         
         # 4. Draw Header Badge: LIVED / REMAINING
         badge_text = "LIVED" if is_lived else "REMAINING"
         if is_lived:
-            badge_bg = (39, 39, 42, 255) # #27272a
-            badge_fg = (161, 161, 170, 255) # #a1a1aa
+            badge_bg = (39, 39, 42) # #27272a
+            badge_fg = (161, 161, 170) # #a1a1aa
         else:
-            badge_bg = (30, 30, 32, 255) # #1e1e20
-            badge_fg = (113, 113, 122, 255) # #71717a
+            badge_bg = (30, 30, 32) # #1e1e20
+            badge_fg = (113, 113, 122) # #71717a
             
         # Draw badge squircle
         draw.rounded_rectangle([155, 14, 220, 34], radius=5, fill=badge_bg)
-        draw.text((187, 24), badge_text, font=font_sm_bold, fill=badge_fg, anchor="mm")
+        try:
+            draw.text((187, 24), badge_text, font=font_sm_bold, fill=badge_fg, anchor="mm")
+        except (ValueError, AttributeError):
+            draw.text((165, 18), badge_text, font=font_sm_bold, fill=badge_fg)
         
         # 5. Divider Line
-        draw.line([(20, 44), (220, 44)], fill=(39, 39, 42, 255), width=1) # #27272a
+        draw.line([(20, 44), (220, 44)], fill=(39, 39, 42), width=1) # #27272a
         
         # 6. Body: Age Row
-        draw.text((20, 62), "Age:", font=font_regular, fill=(113, 113, 122, 255), anchor="lm") # #71717a
-        draw.text((220, 62), age_str, font=font_bold, fill=(255, 255, 255, 255), anchor="rm")
+        try:
+            draw.text((20, 62), "Age:", font=font_regular, fill=(113, 113, 122), anchor="lm") # #71717a
+            draw.text((220, 62), age_str, font=font_bold, fill=(255, 255, 255), anchor="rm")
+        except (ValueError, AttributeError):
+            draw.text((20, 56), "Age:", font=font_regular, fill=(113, 113, 122))
+            draw.text((150, 56), age_str, font=font_bold, fill=(255, 255, 255))
         
         # 7. Body: Date Range Pill
-        draw.rounded_rectangle([20, 78, 220, 108], radius=6, fill=(9, 9, 11, 255)) # #09090b
-        draw.text((120, 93), dates_str, font=font_bold, fill=(228, 228, 231, 255), anchor="mm") # #e4e4e7
+        draw.rounded_rectangle([20, 78, 220, 108], radius=6, fill=(9, 9, 11)) # #09090b
+        try:
+            draw.text((120, 93), dates_str, font=font_bold, fill=(228, 228, 231), anchor="mm") # #e4e4e7
+        except (ValueError, AttributeError):
+            draw.text((30, 86), dates_str, font=font_bold, fill=(228, 228, 231))
         
         # Convert to PhotoImage and update canvas
         self.photo_img = ImageTk.PhotoImage(img)
@@ -322,13 +333,15 @@ class HighlightWindow:
 
     def update_glow(self, radius, color, bg_color):
         r, g, b = 255, 255, 255  # White highlight/glow
-        bg_rgb = hex_to_rgb(bg_color)
         
-        size = self.size
-        img = Image.new("RGBA", (size, size), bg_rgb + (0,))
-        draw = ImageDraw.Draw(img)
+        # Solid base image
+        img = Image.new("RGB", (self.size, self.size), bg_color)
         
-        center = size // 2
+        # RGBA overlay
+        overlay = Image.new("RGBA", (self.size, self.size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        
+        center = self.size // 2
         glow_radius = radius * 3.0
         
         # Smooth radial glow
@@ -347,6 +360,9 @@ class HighlightWindow:
             radius=int(radius * 0.45),
             fill=(255, 255, 255, 255)
         )
+        
+        # Alpha composite overlay onto base image
+        img.paste(overlay, (0, 0), overlay)
         
         self.glow_img = img
         self.photo_img = ImageTk.PhotoImage(img)
