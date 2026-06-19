@@ -481,7 +481,10 @@ def check_hover():
                 age_str = f"{age_years} yr{'s' if age_years != 1 else ''}, {age_weeks} wk{'s' if age_weeks != 1 else ''}"
                 
                 tooltip.show(week_num, is_lived, age_str, dates_str, int(cx), int(cy))
-                highlight.show(int(cx), int(cy))
+                if is_lived:
+                    highlight.show(int(cx), int(cy))
+                else:
+                    highlight.hide()
                 hovering_dot = True
                 
     if not hovering_dot:
