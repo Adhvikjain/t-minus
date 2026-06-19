@@ -7,7 +7,7 @@ import signal
 import datetime
 import tkinter as tk
 import ctypes
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageTk, ImageFont
 
 # -----------------------------------------------------------------------------
 # 1. Configuration & Path Setup
