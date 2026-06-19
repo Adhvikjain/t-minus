@@ -7,6 +7,7 @@ import signal
 import datetime
 import tkinter as tk
 import ctypes
+from PIL import Image, ImageDraw, ImageTk
 
 # -----------------------------------------------------------------------------
 # 1. Configuration & Path Setup
@@ -37,14 +38,14 @@ def get_mouse_pos():
     ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
     return pt.x, pt.y
 
-def get_window_class_under_cursor(x, y, tooltip_hwnd=None):
+def get_window_class_under_cursor(x, y, tooltip_hwnd=None, highlight_hwnd=None):
     pt = POINT(x, y)
     hwnd = ctypes.windll.user32.WindowFromPoint(pt)
     if not hwnd:
         return ""
         
-    # Check if it is our tooltip window
-    if tooltip_hwnd and hwnd == tooltip_hwnd:
+    # Check if it is our tooltip or highlight window
+    if (tooltip_hwnd and hwnd == tooltip_hwnd) or (highlight_hwnd and hwnd == highlight_hwnd):
         return "Tooltip"
     
     # Check current window class
@@ -59,7 +60,7 @@ def get_window_class_under_cursor(x, y, tooltip_hwnd=None):
     # Check parent windows (traverse up to find if it's hosted in WorkerW/Progman or is our tooltip)
     parent = ctypes.windll.user32.GetParent(hwnd)
     while parent:
-        if tooltip_hwnd and parent == tooltip_hwnd:
+        if (tooltip_hwnd and parent == tooltip_hwnd) or (highlight_hwnd and parent == highlight_hwnd):
             return "Tooltip"
         buf = ctypes.create_unicode_buffer(512)
         ctypes.windll.user32.GetClassNameW(parent, buf, 512)
@@ -147,9 +148,6 @@ def load_config():
         pass
     return default_config, 0
 
-# -----------------------------------------------------------------------------
-# 4. Tkinter Tooltip UI Class
-# -----------------------------------------------------------------------------
 def draw_squircle(canvas, x1, y1, x2, y2, r, **kwargs):
     points = [
         x1+r, y1,
@@ -166,6 +164,12 @@ def draw_squircle(canvas, x1, y1, x2, y2, r, **kwargs):
         x1, y1
     ]
     return canvas.create_polygon(points, **kwargs, smooth=True)
+
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) == 3:
+        hex_color = ''.join([c*2 for c in hex_color])
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 class TooltipWindow:
     def __init__(self):
@@ -190,106 +194,88 @@ class TooltipWindow:
             self.hwnd = None
             
         self.root.config(bg="#121212")
-        self.card_width = 280
-        self.card_height = 110
+        self.card_width = 240
+        self.card_height = 125
         
         # Create canvas for squircle drawing
         self.canvas = tk.Canvas(self.root, bg="#121212", highlightthickness=0, width=self.card_width, height=self.card_height)
         self.canvas.pack(fill="both", expand=True)
         
-        # We will initialize the frame and place it in the canvas window
-        self.frame = tk.Frame(self.canvas)
-        self.canvas.create_window(self.card_width / 2, self.card_height / 2, window=self.frame, width=self.card_width - 16, height=self.card_height - 16)
-        
-        # Title/Header (Week X)
-        self.header_frame = tk.Frame(self.frame)
-        self.header_frame.pack(fill="x", padx=4, pady=(4, 4))
-        
-        self.week_label = tk.Label(self.header_frame, font=("Segoe UI", 11, "bold"))
-        self.week_label.pack(side="left")
-        
-        self.status_label = tk.Label(self.header_frame, font=("Segoe UI", 8, "bold"), padx=6, pady=2)
-        self.status_label.pack(side="right")
-        
-        # Divider Line
-        self.divider = tk.Frame(self.frame, height=1)
-        self.divider.pack(fill="x", padx=4, pady=4)
-        
-        # Details (Age & Date Range)
-        self.body_frame = tk.Frame(self.frame)
-        self.body_frame.pack(fill="both", expand=True, padx=4, pady=(4, 4))
-        
-        self.age_lbl = tk.Label(self.body_frame, text="Age:", font=("Segoe UI", 9))
-        self.age_lbl.grid(row=0, column=0, sticky="w", pady=2)
-        self.age_val = tk.Label(self.body_frame, font=("Segoe UI", 9, "bold"))
-        self.age_val.grid(row=0, column=1, sticky="e", pady=2)
-        
-        self.date_lbl = tk.Label(self.body_frame, text="Dates:", font=("Segoe UI", 9))
-        self.date_lbl.grid(row=1, column=0, sticky="w", pady=2)
-        self.date_val = tk.Label(self.body_frame, font=("Segoe UI", 9, "bold"))
-        self.date_val.grid(row=1, column=1, sticky="e", pady=2)
-        
-        self.body_frame.columnconfigure(0, weight=1)
-        self.body_frame.columnconfigure(1, weight=1)
-        
         self.visible = False
+        self.lived_color = "#a3a3a3"
+        self.remaining_color = "#262626"
+        self.text_color = "#737373"
+        
+        # Pre-create Canvas elements so we just modify them later
+        # 1. Main Background Squircle
+        self.bg_id = draw_squircle(self.canvas, 2, 2, self.card_width - 2, self.card_height - 2, 16, fill="#18181b", outline="", width=0)
+        
+        # 2. Header: Week X
+        self.week_text_id = self.canvas.create_text(20, 24, text="Week 0", font=("Segoe UI", 11, "bold"), fill="#ffffff", anchor="w")
+        
+        # 3. Header Badge: LIVED / REMAINING
+        # Badge coordinates: Left=155, Top=14, Right=220, Bottom=34, Radius=5
+        self.badge_bg_id = draw_squircle(self.canvas, 155, 14, 220, 34, 5, fill="#27272a", outline="", width=0)
+        self.badge_text_id = self.canvas.create_text(187, 24, text="LIVED", font=("Segoe UI", 8, "bold"), fill="#a1a1aa", anchor="center")
+        
+        # 4. Divider Line
+        self.divider_id = self.canvas.create_line(20, 44, 220, 44, fill="#27272a", width=1)
+        
+        # 5. Body: Age Row
+        self.age_label_id = self.canvas.create_text(20, 60, text="Age:", font=("Segoe UI", 9), fill="#71717a", anchor="w")
+        self.age_val_id = self.canvas.create_text(220, 60, text="-", font=("Segoe UI", 9, "bold"), fill="#ffffff", anchor="e")
+        
+        # 6. Body: Date Range Pill
+        # Coordinates: Left=20, Top=78, Right=220, Bottom=108, Radius=6
+        self.date_bg_id = draw_squircle(self.canvas, 20, 78, 220, 108, 6, fill="#09090b", outline="", width=0)
+        self.date_val_id = self.canvas.create_text(120, 93, text="-", font=("Segoe UI", 9, "bold"), fill="#e4e4e7", anchor="center")
         
     def update_theme(self, theme):
-        lived = theme.get("lived_dot", "#a3a3a3")
-        remaining = theme.get("remaining_dot", "#262626")
-        text = theme.get("text", "#737373")
+        self.lived_color = theme.get("lived_dot", "#a3a3a3")
+        self.remaining_color = theme.get("remaining_dot", "#262626")
+        self.text_color = theme.get("text", "#737373")
+        bg_color = theme.get("background", "#09090b")
         
-        # Elegant dark card design
-        card_bg = "#18181b"
-        card_fg = "#f4f4f5"
-        border_color = lived
+        if sys.platform == "win32":
+            self.root.attributes("-transparentcolor", bg_color)
+        self.root.config(bg=bg_color)
+        self.canvas.config(bg=bg_color)
+        self.canvas.itemconfig(self.bg_id, fill="#18181b")
         
-        # Redraw canvas squircle
-        self.canvas.delete("squircle_bg")
-        draw_squircle(self.canvas, 2, 2, self.card_width - 2, self.card_height - 2, 16, fill=card_bg, outline=border_color, width=2, tags="squircle_bg")
+    def show(self, week_num, is_lived, age_str, dates_str, cx, cy):
+        # Update text contents
+        self.canvas.itemconfig(self.week_text_id, text=f"Week {week_num}")
+        self.canvas.itemconfig(self.age_val_id, text=age_str)
+        self.canvas.itemconfig(self.date_val_id, text=dates_str)
         
-        # Style inner widgets
-        self.frame.config(bg=card_bg)
-        self.header_frame.config(bg=card_bg)
-        self.week_label.config(bg=card_bg, fg=lived)
-        self.divider.config(bg="#27272a")
-        self.body_frame.config(bg=card_bg)
-        
-        self.age_lbl.config(bg=card_bg, fg=text)
-        self.age_val.config(bg=card_bg, fg=card_fg)
-        self.date_lbl.config(bg=card_bg, fg=text)
-        self.date_val.config(bg=card_bg, fg=card_fg)
-        
-        self.lived_color = lived
-        self.remaining_color = remaining
-        self.text_color = text
-        
-    def show(self, week_num, is_lived, age_str, dates_str, x, y):
-        self.week_label.config(text=f"Week {week_num}")
-        
+        # Configure badge state
         if is_lived:
-            status_bg = "#22c55e" if self.lived_color == "#4ade80" else self.lived_color
-            status_fg = "#ffffff" if self.lived_color in ("#a3a3a3", "#262626") else "#000000"
+            status_bg = "#27272a"
+            status_fg = "#a1a1aa"
+            status_text = "LIVED"
         else:
-            status_bg = self.remaining_color
-            status_fg = "#ffffff"
+            status_bg = "#1e1e20"
+            status_fg = "#71717a"
+            status_text = "REMAINING"
             
-        self.status_label.config(text="LIVED" if is_lived else "REMAINING", bg=status_bg, fg=status_fg)
-        self.age_val.config(text=age_str)
-        self.date_val.config(text=dates_str)
+        self.canvas.itemconfig(self.badge_bg_id, fill=status_bg)
+        self.canvas.itemconfig(self.badge_text_id, text=status_text, fill=status_fg)
         
-        # Position slightly offset from mouse cursor
-        tx = x + 15
-        ty = y + 15
+        # Center horizontally, offset above dot
+        tx = int(cx - self.card_width / 2)
+        ty = int(cy - self.card_height - 15)
         
         # Prevent tooltip from rendering off-screen
         screen_w = self.root.winfo_screenwidth()
         screen_h = self.root.winfo_screenheight()
         
-        if tx + self.card_width > screen_w:
-            tx = x - self.card_width - 15
-        if ty + self.card_height > screen_h:
-            ty = y - self.card_height - 15
+        if tx < 10:
+            tx = 10
+        elif tx + self.card_width > screen_w - 10:
+            tx = screen_w - self.card_width - 10
+            
+        if ty < 10:
+            ty = cy + 15
             
         self.root.geometry(f"{self.card_width}x{self.card_height}+{tx}+{ty}")
             
@@ -297,6 +283,84 @@ class TooltipWindow:
             self.root.deiconify()
             self.visible = True
             
+    def hide(self):
+        if self.visible:
+            self.root.withdraw()
+            self.visible = False
+
+class HighlightWindow:
+    def __init__(self, master):
+        self.root = tk.Toplevel(master)
+        self.root.withdraw()
+        self.root.overrideredirect(True)
+        self.root.wm_attributes("-topmost", True)
+        
+        if sys.platform == "win32":
+            self.root.update_idletasks()
+            self.hwnd = self.root.winfo_id()
+            GWL_EXSTYLE = -20
+            WS_EX_NOACTIVATE = 0x08000000
+            WS_EX_TRANSPARENT = 0x00000020
+            style = ctypes.windll.user32.GetWindowLongW(self.hwnd, GWL_EXSTYLE)
+            ctypes.windll.user32.SetWindowLongW(self.hwnd, GWL_EXSTYLE, style | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT)
+            self.root.attributes("-transparentcolor", "#09090b")
+            
+        self.root.config(bg="#09090b")
+        self.size = 60
+        self.canvas = tk.Canvas(self.root, bg="#09090b", highlightthickness=0, width=self.size, height=self.size)
+        self.canvas.pack(fill="both", expand=True)
+        self.visible = False
+        self.glow_img = None
+        self.photo_img = None
+
+    def update_glow(self, radius, color, bg_color):
+        r, g, b = 255, 255, 255  # White highlight/glow
+        bg_rgb = hex_to_rgb(bg_color)
+        
+        size = self.size
+        img = Image.new("RGBA", (size, size), bg_rgb + (0,))
+        draw = ImageDraw.Draw(img)
+        
+        center = size // 2
+        glow_radius = radius * 3.0
+        
+        # Smooth radial glow
+        for i in range(int(glow_radius), radius - 1, -1):
+            pct = (i - radius) / max(1, (glow_radius - radius))
+            alpha = int(120 * (1.0 - pct)**2)
+            draw.rounded_rectangle(
+                [center - i, center - i, center + i, center + i],
+                radius=int(i * 0.45),
+                fill=(r, g, b, alpha)
+            )
+            
+        # Main bright white dot
+        draw.rounded_rectangle(
+            [center - radius, center - radius, center + radius, center + radius],
+            radius=int(radius * 0.45),
+            fill=(255, 255, 255, 255)
+        )
+        
+        self.glow_img = img
+        self.photo_img = ImageTk.PhotoImage(img)
+        self.canvas.delete("all")
+        self.canvas.create_image(center, center, image=self.photo_img)
+
+    def update_theme(self, theme):
+        bg_color = theme.get("background", "#09090b")
+        if sys.platform == "win32":
+            self.root.attributes("-transparentcolor", bg_color)
+        self.root.config(bg=bg_color)
+        self.canvas.config(bg=bg_color)
+
+    def show(self, cx, cy):
+        tx = int(cx - self.size / 2)
+        ty = int(cy - self.size / 2)
+        self.root.geometry(f"{self.size}x{self.size}+{tx}+{ty}")
+        if not self.visible:
+            self.root.deiconify()
+            self.visible = True
+
     def hide(self):
         if self.visible:
             self.root.withdraw()
@@ -325,6 +389,8 @@ def check_hover():
             weeks_lived = days_lived // 7
             
             tooltip.update_theme(config.get("theme", {}))
+            highlight.update_theme(config.get("theme", {}))
+            highlight.update_glow(int(lived_radius), "#ffffff", config.get("theme", {}).get("background", "#09090b"))
             
             # Recalculate grid coordinate projections (in case resolution changed too)
             width, height = get_screen_resolution()
@@ -342,7 +408,7 @@ def check_hover():
     mx, my = get_mouse_pos()
     
     # Check if window class under cursor is Windows desktop
-    cls = get_window_class_under_cursor(mx, my, tooltip.hwnd)
+    cls = get_window_class_under_cursor(mx, my, tooltip.hwnd, highlight.hwnd)
     is_on_desktop = cls in ("WorkerW", "Progman", "SysListView32", "Tooltip")
     
     hovering_dot = False
@@ -376,10 +442,12 @@ def check_hover():
                 age_str = f"{age_years} yr{'s' if age_years != 1 else ''}, {age_weeks} wk{'s' if age_weeks != 1 else ''}"
                 
                 tooltip.show(week_num, is_lived, age_str, dates_str, int(cx), int(cy))
+                highlight.show(int(cx), int(cy))
                 hovering_dot = True
                 
     if not hovering_dot:
         tooltip.hide()
+        highlight.hide()
         
     # Poll every 100ms
     tooltip.root.after(100, check_hover)
@@ -424,6 +492,10 @@ if __name__ == "__main__":
     # Start tooltip UI
     tooltip = TooltipWindow()
     tooltip.update_theme(config.get("theme", {}))
+    
+    highlight = HighlightWindow(tooltip.root)
+    highlight.update_theme(config.get("theme", {}))
+    highlight.update_glow(int(lived_radius), "#ffffff", config.get("theme", {}).get("background", "#09090b"))
     
     # Start polling
     tooltip.root.after(100, check_hover)
