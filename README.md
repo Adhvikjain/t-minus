@@ -70,6 +70,12 @@ powershell -ExecutionPolicy Bypass -File .\register_task.ps1
     ```bash
     python generate_wallpaper.py
     ```
+*   **Open Interactive Progress Dashboard**:
+    Generate the visualizer and open it in your default browser:
+    ```bash
+    python generate_wallpaper.py --open
+    ```
+    This generates a self-contained, beautiful, offline-capable `life_progress.html` in your `~/wallpaper_life/` directory with interactive hover tooltips that show the exact date ranges and age metrics for each week of your life.
 *   **Manual Task Scheduler Test**:
     ```powershell
     schtasks /run /tn "LifeProgressWallpaper"
