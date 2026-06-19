@@ -216,11 +216,17 @@ class TooltipWindow:
     def show(self, week_num, is_lived, age_str, dates_str, cx, cy):
         # Render the tooltip card as a solid RGB image
         bg_color = self.theme.get("background", "#09090b")
+        bg_rgb = hex_to_rgb(bg_color)
         img = Image.new("RGB", (self.card_width, self.card_height), bg_color)
         draw = ImageDraw.Draw(img)
         
+        # Prevent drawing colors from matching transparent color key (which would key them out)
+        card_fill = (24, 24, 27)
+        if card_fill == bg_rgb:
+            card_fill = (34, 34, 37)
+            
         # 1. Main Background Squircle
-        draw.rounded_rectangle([2, 2, self.card_width - 2, self.card_height - 2], radius=16, fill=(24, 24, 27)) # #18181b
+        draw.rounded_rectangle([2, 2, self.card_width - 2, self.card_height - 2], radius=16, fill=card_fill)
         
         # 2. Load Fonts
         try:
@@ -249,6 +255,9 @@ class TooltipWindow:
             badge_bg = (30, 30, 32) # #1e1e20
             badge_fg = (113, 113, 122) # #71717a
             
+        if badge_bg == bg_rgb:
+            badge_bg = (badge_bg[0] + 10, badge_bg[1] + 10, badge_bg[2] + 10)
+            
         # Draw badge squircle
         draw.rounded_rectangle([155, 14, 220, 34], radius=5, fill=badge_bg)
         try:
@@ -257,7 +266,10 @@ class TooltipWindow:
             draw.text((165, 18), badge_text, font=font_sm_bold, fill=badge_fg)
         
         # 5. Divider Line
-        draw.line([(20, 44), (220, 44)], fill=(39, 39, 42), width=1) # #27272a
+        divider_color = (39, 39, 42)
+        if divider_color == bg_rgb:
+            divider_color = (49, 49, 52)
+        draw.line([(20, 44), (220, 44)], fill=divider_color, width=1)
         
         # 6. Body: Age Row
         try:
@@ -268,7 +280,11 @@ class TooltipWindow:
             draw.text((150, 56), age_str, font=font_bold, fill=(255, 255, 255))
         
         # 7. Body: Date Range Pill
-        draw.rounded_rectangle([20, 78, 220, 108], radius=6, fill=(9, 9, 11)) # #09090b
+        date_pill_fill = (18, 18, 20) # #121214
+        if date_pill_fill == bg_rgb:
+            date_pill_fill = (28, 28, 30)
+            
+        draw.rounded_rectangle([20, 78, 220, 108], radius=6, fill=date_pill_fill)
         try:
             draw.text((120, 93), dates_str, font=font_bold, fill=(228, 228, 231), anchor="mm") # #e4e4e7
         except (ValueError, AttributeError):
